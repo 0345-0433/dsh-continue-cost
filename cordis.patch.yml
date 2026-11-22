@@ -1,0 +1,9 @@
+# dsh-continue-cost —— bundle patch
+#
+# The client half owns the composer chip and all cost arithmetic. The Host
+# half adds two optional routes that fetch DeepSeek's public pricing Markdown
+# and the State Council holiday notices; it never receives Session content or
+# credentials. Thresholds live in this browser's localStorage.
+- insert:
+    - id: dsh-continue-cost
+      name: 'dsh-continue-cost'

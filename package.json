@@ -1,0 +1,64 @@
+{
+  "name": "dsh-continue-cost",
+  "version": "1.2.0",
+  "private": false,
+  "license": "MIT",
+  "description": "DSH 插件：显示对话轮数与续聊差价 —— 继续当前对话比新开一次多花多少钱。Turn count and the extra context cost of continuing this chat instead of starting fresh.",
+  "author": {
+    "name": "0345-0433",
+    "url": "https://github.com/0345-0433"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cost",
+    "token",
+    "pricing",
+    "turn-count",
+    "cache",
+    "plugin"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/0345-0433/dsh-continue-cost.git"
+  },
+  "homepage": "https://github.com/0345-0433/dsh-continue-cost#readme",
+  "bugs": {
+    "url": "https://github.com/0345-0433/dsh-continue-cost/issues"
+  },
+  "type": "module",
+  "icon": "./icon.svg",
+  "main": "./host-1.2.0.js",
+  "exports": {
+    ".": "./host-1.2.0.js",
+    "./host": "./host-1.2.0.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host-1.2.0.js",
+    "host.js",
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-slots"
+      ]
+    }
+  }
+}
