@@ -1,6 +1,6 @@
 {
   "meta": {
     "title": "Turn count & carry-over delta",
-    "description": "Shows the completed turn count at the right of the composer, or switches to the extra cost of continuing this conversation instead of starting a fresh one. Hover for the estimate; click the chip to pin the panel, switch the display, and set green, yellow, and red thresholds for turns or cost. Price and Chinese holiday tables update daily from public DeepSeek and gov.cn pages, falling back to a local cache or built-in table; no conversation content is sent and no API key is read."
+    "description": "Shows the completed turn count at the right of the composer, or switches to the extra cost of continuing this conversation instead of starting a fresh one. A small badge on the chip names the tariff in force and flips automatically across the official peak boundaries (09:00–12:00 and 14:00–18:00 Beijing time on workdays). Hover for the estimate; click the chip to pin the panel, switch the display, and set green, yellow, and red thresholds for turns or cost. Price and Chinese holiday tables update daily from public DeepSeek and gov.cn pages, falling back to a local cache or built-in table; no conversation content is sent and no API key is read."
   }
 }
