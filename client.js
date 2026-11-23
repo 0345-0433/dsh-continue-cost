@@ -265,7 +265,7 @@
     'panel.holidayBuiltin': '内置',
     'panel.perMillion': '/ 百万 tokens',
     'panel.tariff': '当前时段',
-    'panel.tariffRule': '工作日北京时间 9:00–12:00、14:00–18:00 为峰时；午间、周末与法定节假日全天为谷时。跨过边界后这里与芯片上的「峰/谷」会自动切换。',
+    'panel.tariffRule': '工作日北京时间 9:00–12:00、14:00–18:00 为峰时；午间、周末与法定节假日全天为谷时。跨过边界后这里与胶囊上的「峰/谷」会自动切换。',
     'panel.beijingTime': '北京时间',
     'panel.noPrice': '未收录该模型价格',
     'panel.noContext': '上下文数据还没准备好，暂时无法估算历史占比。',
