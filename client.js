@@ -264,6 +264,9 @@
     'panel.holidayCache': '本地缓存',
     'panel.holidayBuiltin': '内置',
     'panel.perMillion': '/ 百万 tokens',
+    'panel.tariff': '当前时段',
+    'panel.tariffRule': '工作日北京时间 9:00–12:00、14:00–18:00 为峰时；午间、周末与法定节假日全天为谷时。跨过边界后这里与芯片上的「峰/谷」会自动切换。',
+    'panel.beijingTime': '北京时间',
     'panel.noPrice': '未收录该模型价格',
     'panel.noContext': '上下文数据还没准备好，暂时无法估算历史占比。',
     'panel.waiting': '还没有可用的 token 用量，先按未命中缓存的单价估算。',
@@ -278,6 +281,8 @@
     'tone.idle': '等待数据',
     'tariff.peak': '峰时',
     'tariff.off': '谷时',
+    'tariff.peakShort': '峰',
+    'tariff.offShort': '谷',
     'settings.title': '阈值设置',
     'settings.turns': '对话轮数',
     'settings.cost': '多花金额',
@@ -318,6 +323,9 @@
     'panel.holidayCache': 'Local cache',
     'panel.holidayBuiltin': 'Built-in',
     'panel.perMillion': '/ 1M tokens',
+    'panel.tariff': 'Current tariff',
+    'panel.tariffRule': 'Peak is 09:00–12:00 and 14:00–18:00 Beijing weekdays; the midday break, weekends and public holidays are off-peak. The chip badge and this row follow the clock automatically.',
+    'panel.beijingTime': 'Beijing',
     'panel.noPrice': 'No listed price for this model',
     'panel.noContext': 'Context data is not ready yet; the history share is unknown for now.',
     'panel.waiting': 'No token usage yet; pricing the history at the cache-miss rate.',
@@ -332,6 +340,8 @@
     'tone.idle': 'waiting for data',
     'tariff.peak': 'peak',
     'tariff.off': 'off-peak',
+    'tariff.peakShort': 'peak',
+    'tariff.offShort': 'off',
     'settings.title': 'Thresholds',
     'settings.turns': 'Turns',
     'settings.cost': 'Extra cost',
@@ -405,6 +415,8 @@
     const fullKey = raw.toLowerCase()
     const id = PRICING[bareKey] === undefined ? fullKey : bareKey
     const alias = PRICING_ALIASES[id]
+      ?? PRICING_ALIASES[bareKey]
+      ?? PRICING_ALIASES[fullKey]
     return PRICING[id] ?? (alias === undefined ? undefined : PRICING[alias])
   }
 
@@ -417,6 +429,53 @@
   }
 
   /**
+   * Peak windows as Beijing wall-clock `[start, end)` hour pairs, straight from
+   * the official pricing page: "北京时间周一至周五（不含中国法定节假日）
+   * 9:00 - 12:00、14:00 - 18:00 为高峰时段". Everything else — including the
+   * 12:00-14:00 midday break, weekends and statutory holidays — is off-peak.
+   */
+  const PEAK_WINDOWS = [
+    [9, 12],
+    [14, 18],
+  ]
+
+  /** Hours at which the tariff can change: window edges plus midnight. */
+  const TARIFF_BOUNDARY_HOURS = [0, ...PEAK_WINDOWS.flat()]
+
+  /** How far ahead the boundary search looks (a weekend plus a holiday run). */
+  const BOUNDARY_LOOKAHEAD_DAYS = 12
+
+  /**
+   * Read an instant as Beijing wall-clock fields. Shifting the epoch by eight
+   * hours and reading the UTC fields makes the answer independent of the
+   * browser's own time zone.
+   * @param now - instant to read.
+   * @returns `{ day, hour, minute, timeKey, dateKey }` in Beijing time.
+   */
+  function beijingClock(now = new Date()) {
+    const shifted = new Date(now.getTime() + 8 * 60 * 60 * 1000)
+    const hour = shifted.getUTCHours()
+    const minute = shifted.getUTCMinutes()
+    return {
+      day: shifted.getUTCDay(),
+      hour,
+      minute,
+      dateKey: shifted.toISOString().slice(0, 10),
+      timeKey: `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`,
+    }
+  }
+
+  /**
+   * @param clock - Beijing wall-clock fields from {@link beijingClock}.
+   * @returns true when the provider charges the peak tariff then.
+   */
+  function isPeakAtClock(clock) {
+    if (clock.day === 0 || clock.day === 6) return false
+    if (isChineseHoliday(clock.dateKey)) return false
+    return PEAK_WINDOWS.some(([start, end]) => clock.hour >= start && clock.hour < end)
+  }
+
+  /**
    * Which provider tariff is in force now: peak 09:00-12:00 and 14:00-18:00
    * Beijing time on weekdays, off-peak on weekends, make-up working weekends,
    * and Chinese public holidays. The holiday table covers 2026 plus the fixed
@@ -426,15 +485,39 @@
    */
   function isPeakTariff(now = new Date()) {
     try {
-      const beijing = new Date(now.getTime() + 8 * 60 * 60 * 1000)
-      const day = beijing.getUTCDay()
-      if (day === 0 || day === 6) return false
-      const dateKey = beijing.toISOString().slice(0, 10)
-      if (isChineseHoliday(dateKey)) return false
-      const hour = beijing.getUTCHours()
-      return (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
+      return isPeakAtClock(beijingClock(now))
     } catch {
       return true
+    }
+  }
+
+  /**
+   * Milliseconds until the tariff next changes, so the chip can switch exactly
+   * at 09:00 / 12:00 / 14:00 / 18:00 and at midnight (weekend or holiday
+   * starts) instead of waiting for the next poll. Returns the poll interval
+   * when the search fails.
+   * @param now - instant to measure from.
+   * @returns a positive delay in milliseconds.
+   */
+  function msUntilNextTariffChange(now = new Date()) {
+    try {
+      const base = now.getTime()
+      const shifted = new Date(base + 8 * 60 * 60 * 1000)
+      const year = shifted.getUTCFullYear()
+      const month = shifted.getUTCMonth()
+      const date = shifted.getUTCDate()
+      let next = Number.POSITIVE_INFINITY
+      for (let offset = 0; offset <= BOUNDARY_LOOKAHEAD_DAYS; offset += 1) {
+        const day = new Date(Date.UTC(year, month, date + offset))
+        for (const hour of TARIFF_BOUNDARY_HOURS) {
+          const at = Date.UTC(day.getUTCFullYear(), day.getUTCMonth(), day.getUTCDate(), hour)
+            - 8 * 60 * 60 * 1000
+          if (at > base + 1_000 && at < next) next = at
+        }
+      }
+      return Number.isFinite(next) ? next - base : 30_000
+    } catch {
+      return 30_000
     }
   }
 
@@ -690,7 +773,7 @@
   display: inline-flex;
   align-items: stretch;
   height: 28px;
-  max-width: 180px;
+  max-width: 200px;
   padding: 0;
   border: 1px solid var(--dsw-alias-border-l1);
   border-radius: var(--dsw-radius-sm);
@@ -732,6 +815,18 @@
 .dshTurnCost_chip[data-tone="yellow"] .dshTurnCost_dot { background: var(--dsw-alias-state-warn-primary); }
 .dshTurnCost_chip[data-tone="red"] .dshTurnCost_dot { background: var(--dsw-alias-state-error-primary); }
 .dshTurnCost_amount { font-variant-numeric: tabular-nums; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.dshTurnCost_tariff {
+  flex: none;
+  align-self: center;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 10px;
+  line-height: 12px;
+  letter-spacing: .02em;
+}
+.dshTurnCost_tariff[data-tariff="peak"] { color: var(--dsw-alias-label-primary); }
 .dshTurnCost_panel {
   position: absolute;
   bottom: calc(100% + 8px);
@@ -918,18 +1013,19 @@
         }
       }
 
-      /** @param amount - non-negative CNY. @returns a cost value with a stable four decimals. */
+      /** @param amount - non-negative CNY. @returns a cost value with four decimals (five below ¥0.0001). */
       function formatCost(amount) {
         if (typeof amount !== 'number' || !Number.isFinite(amount)) return '—'
+        const digits = amount > 0 && amount < 0.0001 ? 5 : 4
         try {
           return new Intl.NumberFormat(undefined, {
             style: 'currency',
             currency: 'CNY',
-            minimumFractionDigits: 4,
-            maximumFractionDigits: 4,
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits,
           }).format(amount)
         } catch {
-          return `¥${amount.toFixed(4)}`
+          return `¥${amount.toFixed(digits)}`
         }
       }
 
@@ -1059,6 +1155,7 @@
         settings,
         priceSource,
         holidaySource,
+        tariffTime,
         t,
         pinned,
         onUnpin,
@@ -1132,6 +1229,12 @@
             value: estimate.rate === undefined ? '—' : `${formatRate(estimate.rate)} ${t('panel.perMillion')}`,
           }),
           h(Line, { key: 'model', label: t('panel.model'), value: modelText }),
+          h(Line, {
+            key: 'tariff',
+            label: t('panel.tariff'),
+            value: `${tariff} · ${t('panel.beijingTime')} ${tariffTime}`,
+          }),
+          h('div', { key: 'tariffRule', className: 'dshTurnCost_note' }, t('panel.tariffRule')),
           h(Line, {
             key: 'priceSource',
             label: t('panel.priceTable'),
@@ -1365,16 +1468,54 @@
 
         const rawTurns = stats?.turns
         const turns = typeof rawTurns === 'number' && Number.isFinite(rawTurns) && rawTurns >= 0 ? Math.floor(rawTurns) : 0
-        const peak = isPeakTariff()
+        const now = new Date()
+        const peak = isPeakTariff(now)
+        let tariffTime = ''
+        try {
+          tariffTime = beijingClock(now).timeKey
+        } catch {
+          tariffTime = ''
+        }
         const estimate = estimateNextTurn({ usage, breakdown, pressure, selection, peak })
         const tone = toneOf(settings, turns, estimate, stats !== undefined)
         const open = hovered || pinned || focusWithin
+        /**
+         * Keep the displayed tariff honest without polling blindly: wake up at
+         * the exact next change (window edge or midnight, so weekends and
+         * holidays flip too), fall back to a 30 s poll, and recompute as soon
+         * as the window is visible again after sleep, minimise or a background
+         * tab — the case where a stale "谷价" used to survive into peak hours.
+         */
         useEffect(() => {
-          const timer = window.setInterval(() => {
+          let timer = 0
+          let disposed = false
+          const schedule = () => {
+            if (disposed) return
+            if (timer !== 0) window.clearTimeout(timer)
+            const delay = Math.min(30_000, Math.max(500, msUntilNextTariffChange() + 400))
+            timer = window.setTimeout(() => {
+              if (disposed) return
+              setClock((value) => value + 1)
+              schedule()
+            }, delay)
+          }
+          const refreshNow = () => {
             setClock((value) => value + 1)
-          }, 30_000)
+            schedule()
+          }
+          const onVisibility = () => {
+            if (document.visibilityState === 'visible') refreshNow()
+          }
+          document.addEventListener('visibilitychange', onVisibility)
+          window.addEventListener('focus', refreshNow)
+          window.addEventListener('pageshow', refreshNow)
+          schedule()
           return () => {
-            window.clearInterval(timer)
+            disposed = true
+            if (timer !== 0) window.clearTimeout(timer)
+            document.removeEventListener('visibilitychange', onVisibility)
+            window.removeEventListener('focus', refreshNow)
+            window.removeEventListener('pageshow', refreshNow)
           }
         }, [])
         const turnsLabel = stats === undefined ? t('chip.turnsLoading') : `${turns} ${t('chip.unit')}`
@@ -1392,7 +1533,9 @@
                 ? t('tone.red')
                 : t('tone.idle')
         const basisLabel = settings.metric === 'cost' ? t('settings.cost') : t('settings.turns')
-        const summary = `${t('chip.title')} · ${valueLabel} · ${t('panel.colorBy')}: ${basisLabel} (${toneText}) · ${t('chip.pinHint')}`
+        const tariffLabel = peak ? t('tariff.peak') : t('tariff.off')
+        const tariffBadge = peak ? t('tariff.peakShort') : t('tariff.offShort')
+        const summary = `${t('chip.title')} · ${valueLabel} · ${tariffLabel} · ${t('panel.colorBy')}: ${basisLabel} (${toneText}) · ${t('chip.pinHint')}`
 
         const updateMetric = (metric) => {
           publishSettings({ ...settings, metric })
@@ -1480,6 +1623,15 @@
               },
               h('span', { className: 'dshTurnCost_dot', 'aria-hidden': true }),
               h('span', { className: 'dshTurnCost_amount' }, valueLabel),
+              h(
+                'span',
+                {
+                  className: 'dshTurnCost_tariff',
+                  'data-tariff': peak ? 'peak' : 'off',
+                  'aria-hidden': true,
+                },
+                tariffBadge,
+              ),
             ),
           ),
           open
@@ -1490,6 +1642,7 @@
                 settings,
                 priceSource: priceInfo.source,
                 holidaySource: holidayInfo.source,
+                tariffTime,
                 t,
                 pinned,
                 onUnpin: dismiss,
@@ -1510,6 +1663,28 @@
         ctx.effect(() => ctx.locale.register(NS, 'zh', ZH), 'dsh-continue-cost: zh dictionary')
         ctx.effect(() => ctx.locale.register(NS, 'en', EN), 'dsh-continue-cost: en dictionary')
         const t = ctx.locale.bind(NS)
+
+        /* Thresholds are shared through localStorage, so a second window or tab
+         * picks up a change without a reload. Echo suppression comes from
+         * comparing the normalized value before writing again. */
+        ctx.effect(() => {
+          const onStorage = (event) => {
+            if (event.key !== STORAGE_KEY) return
+            let parsed
+            try {
+              parsed = event.newValue === null ? undefined : JSON.parse(event.newValue)
+            } catch {
+              return
+            }
+            const next = normalizeSettings(parsed)
+            if (JSON.stringify(next) === JSON.stringify(getSettings())) return
+            publishSettings(next)
+          }
+          window.addEventListener('storage', onStorage)
+          return () => {
+            window.removeEventListener('storage', onStorage)
+          }
+        }, 'dsh-continue-cost: threshold sync')
 
         ctx.effect(() => {
           void refreshPrices()
