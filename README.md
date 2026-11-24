@@ -118,13 +118,13 @@
 
 **1. 本地文件夹（推荐给朋友之间分享）**
 
-1. 下载 `dsh-continue-cost-1.3.0.zip` 并解压，得到 `dsh-continue-cost` 文件夹，放到固定位置。
+1. 下载 `dsh-continue-cost-1.3.1.zip` 并解压，得到 `dsh-continue-cost` 文件夹，放到固定位置。
 2. DSH：**设置 → 插件 → 添加插件**，选择这个包含 `package.json` 的文件夹。
 3. **完全退出 DSH 再打开**（Host 端的价格/节假日路由要重启才挂载）。
 
 **2. npm（发布后可用）**
 
-在 DSH 里用插件管理器安装：`plugin_manager` 的 `install_bundle`，target 填 `dsh-continue-cost@1.3.0`；如果这台 DSH 自带 `dsh` 命令，也可以 `dsh plugin add dsh-continue-cost`（profile 名按你的安装，桌面版一般是 `desktop`）。
+在 DSH 里用插件管理器安装：`plugin_manager` 的 `install_bundle`，target 填 `dsh-continue-cost@1.3.1`；如果这台 DSH 自带 `dsh` 命令，也可以 `dsh plugin add dsh-continue-cost`（profile 名按你的安装，桌面版一般是 `desktop`）。
 
 **3. GitHub Release**：从 Releases 下载 zip，按方式 1 安装。
 
